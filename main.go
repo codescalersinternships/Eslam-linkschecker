@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	configFile := flag.String("config", "", "")
+	configFile := flag.String("config", "config.toml", "")
 	flag.Parse()
 
 	config, err := toml.LoadFile(*configFile)
@@ -47,8 +47,8 @@ func checkMap(mp any) []string {
 }
 
 func validLink(link string) bool {
-	if !strings.Contains(link, ("http")) {
-		link = "http://" + link
+	if !strings.HasPrefix(link, "http://") && !strings.HasPrefix(link, "https://") {
+		link = fmt.Sprintf("http://%s", link)
 	}
 
 	headResp, headErr := http.Head(link)
