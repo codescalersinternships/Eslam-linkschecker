@@ -1,0 +1,10 @@
+[sites]
+    [sites.threefold]
+        url = 'threefold.io'
+    [sites.codescalers]
+        url = 'codescalers.com'
+    [sites.invalid]
+        url = 'facebook.com/nnn'
+    [sites.valid]
+        url = 'https://www.facebook.com/'
+
