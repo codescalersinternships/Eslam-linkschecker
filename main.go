@@ -3,12 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
-	"reflect"
 	"strings"
 
-	toml "github.com/pelletier/go-toml"
 	"golang.org/x/net/html"
 )
 
@@ -16,60 +13,14 @@ func main() {
 	configFile := flag.String("config", "config.toml", "")
 	flag.Parse()
 
-	config, err := toml.LoadFile(*configFile)
+	links := parseConfigFile(configFile)
 
-	if err != nil {
-		panic(err)
-	}
-
-	mp := config.ToMap()
-
-	checkMap(mp)
-
+	mp := make(map[string]bool)
+	checkAllLinks(links, &mp)
 }
 
-func checkMap(mp any) {
-	for _, val := range mp.(map[string]any) {
-
-		if reflect.TypeOf(val).Kind() == reflect.Map {
-			checkMap(val)
-		} else {
-			ch := make(chan bool)
-			go validateWabsite(val.(string), ch)
-			<-ch
-		}
-	}
-}
-
-func validateWabsite(host string, ch chan bool) {
-	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
-		host = fmt.Sprintf("http://%s", host)
-	}
-	resp, err := http.Get(host)
-
-	if err != nil {
-		fmt.Println(host)
-		return
-	}
-
-	defer resp.Body.Close()
-
-	links := getLinks(resp.Body)
-
-	for _, link := range links {
-		if !validateLink(link) {
-			fmt.Println("failed: ", link)
-		} else {
-			fmt.Println("passed: ", link)
-		}
-	}
-	ch <- true
-}
-
-func validateLink(link string) bool {
-	if !strings.HasPrefix(link, "http://") && !strings.HasPrefix(link, "https://") {
-		link = fmt.Sprintf("http://%s", link)
-	}
+func validLink(link string) bool {
+	link = addHeader(link)
 
 	headResp, headErr := http.Head(link)
 	getResp, GetErr := http.Get(link)
@@ -87,12 +38,22 @@ func validateLink(link string) bool {
 		(headStatusCode >= 200 && headStatusCode < 400)
 }
 
-func getLinks(body io.Reader) []string {
+func getLinks(link string) []string {
 	var links []string
+	link = addHeader(link)
+
+	resp, err := http.Get(link)
+
+	if err != nil {
+		return nil
+	}
+
+	body := resp.Body
+	defer body.Close()
+
 	z := html.NewTokenizer(body)
 	for {
 		tt := z.Next()
-
 		switch tt {
 		case html.ErrorToken:
 			return links
@@ -103,10 +64,29 @@ func getLinks(body io.Reader) []string {
 					if attr.Key == "href" {
 						links = append(links, attr.Val)
 					}
-
 				}
 			}
-
 		}
 	}
+}
+
+func checkAllLinks(links []string, allLinks *map[string]bool) {
+	for _, link := range links {
+		if !(*allLinks)[link] {
+			(*allLinks)[link] = true
+			if validLink(link) {
+				innerLinks := getLinks(link)
+				checkAllLinks(innerLinks, allLinks)
+			} else {
+				fmt.Println("Failed: ", link)
+			}
+		}
+	}
+}
+
+func addHeader(link string) string {
+	if !strings.HasPrefix(link, "http://") && !strings.HasPrefix(link, "https://") {
+		link = fmt.Sprintf("http://%s", link)
+	}
+	return link
 }
