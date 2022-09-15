@@ -17,7 +17,7 @@ func main() {
 	links := parseConfigFile(configFile)
 
 	mp := make(map[string]bool)
-	checkAllLinks(links, &mp, "")
+	checkAllLinks(links, mp, "")
 }
 
 func validLink(link string) bool {
@@ -71,10 +71,10 @@ func getLinks(link string) []string {
 	}
 }
 
-func checkAllLinks(links []string, allLinks *map[string]bool, parent string) {
+func checkAllLinks(links []string, allLinks map[string]bool, parent string) {
 	for _, link := range links {
-		if !(*allLinks)[link] {
-			(*allLinks)[link] = true
+		if !allLinks[link] {
+			allLinks[link] = true
 			if validLink(link) {
 				innerLinks := getLinks(link)
 				checkAllLinks(innerLinks, allLinks, link)
