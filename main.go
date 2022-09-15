@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -16,7 +17,7 @@ func main() {
 	links := parseConfigFile(configFile)
 
 	mp := make(map[string]bool)
-	checkAllLinks(links, &mp)
+	checkAllLinks(links, &mp, "")
 }
 
 func validLink(link string) bool {
@@ -70,13 +71,22 @@ func getLinks(link string) []string {
 	}
 }
 
-func checkAllLinks(links []string, allLinks *map[string]bool) {
+func checkAllLinks(links []string, allLinks *map[string]bool, parent string) {
 	for _, link := range links {
 		if !(*allLinks)[link] {
 			(*allLinks)[link] = true
 			if validLink(link) {
 				innerLinks := getLinks(link)
-				checkAllLinks(innerLinks, allLinks)
+				checkAllLinks(innerLinks, allLinks, link)
+			} else if parent != "" {
+				host := getHostname(parent)
+				newLink := fmt.Sprintf("%s/%s", host, strings.Trim(link, "/"))
+				if host != "" && validLink(newLink) {
+					innerLinks := getLinks(addHeader(newLink))
+					checkAllLinks(innerLinks, allLinks, newLink)
+				} else {
+					fmt.Println("Failed: ", newLink)
+				}
 			} else {
 				fmt.Println("Failed: ", link)
 			}
@@ -89,4 +99,13 @@ func addHeader(link string) string {
 		link = fmt.Sprintf("http://%s", link)
 	}
 	return link
+}
+
+func getHostname(link string) string {
+	link = addHeader(link)
+	url, err := url.Parse(link)
+	if err != nil {
+		return ""
+	}
+	return strings.Trim(url.Hostname(), "/")
 }
