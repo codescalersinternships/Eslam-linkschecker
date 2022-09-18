@@ -12,6 +12,7 @@ import (
 )
 
 func main() {
+
 	configFile := flag.String("config", "config.toml", "")
 	flag.Parse()
 
@@ -27,15 +28,15 @@ func main() {
 }
 
 func checkAllLinks(links []string, visitedLinks map[string]bool, parent string) {
-	for _, link := range links {
-		if !visitedLinks[link] {
 
+	for _, link := range links {
+		if _, ok := visitedLinks[link]; !ok {
 			visitedLinks[link] = true
 			tempLink := fmt.Sprintf("%s/%s", getHostname(parent), strings.Trim(link, "/"))
 
 			if validLink(tempLink) {
 
-				innerLinks := getLinks(tempLink)
+				innerLinks := visitLinkAndExtractLinks(tempLink)
 				checkAllLinks(innerLinks, visitedLinks, tempLink)
 
 			} else {
@@ -43,7 +44,7 @@ func checkAllLinks(links []string, visitedLinks map[string]bool, parent string) 
 				if getHostname(link) == getHostname(parent) || parent == "" {
 
 					if validLink(link) {
-						innerLinks := getLinks(link)
+						innerLinks := visitLinkAndExtractLinks(link)
 						checkAllLinks(innerLinks, visitedLinks, link)
 					} else {
 						fmt.Println(link)
@@ -58,6 +59,7 @@ func checkAllLinks(links []string, visitedLinks map[string]bool, parent string) 
 }
 
 func validLink(link string) bool {
+
 	link = ensureScheme(link)
 	var requestFun func(fn func(string) (*http.Response, error)) bool
 
@@ -75,24 +77,11 @@ func validLink(link string) bool {
 	return requestFun(http.Head) || requestFun(http.Get)
 }
 
-func extractLinksFromString(link string) io.ReadCloser {
-	link = ensureScheme(link)
-	resp, err := http.Get(link)
+func extractLinksFromIOReader(body io.ReadCloser) []string {
 
-	if err != nil {
-		return nil
-	}
-
-	return resp.Body
-}
-
-func getLinks(link string) []string {
 	var links []string
-
-	body := extractLinksFromString(link)
-	defer body.Close()
-
 	z := html.NewTokenizer(body)
+
 	for {
 		tt := z.Next()
 		switch tt {
@@ -111,7 +100,23 @@ func getLinks(link string) []string {
 	}
 }
 
+func visitLinkAndExtractLinks(link string) []string {
+
+	link = ensureScheme(link)
+	resp, err := http.Get(link)
+
+	if err != nil {
+		return nil
+	}
+
+	body := resp.Body
+	defer body.Close()
+
+	return extractLinksFromIOReader(body)
+}
+
 func ensureScheme(link string) string {
+
 	if !strings.HasPrefix(link, "http://") && !strings.HasPrefix(link, "https://") {
 		link = fmt.Sprintf("https://%s", link)
 	}
@@ -119,6 +124,7 @@ func ensureScheme(link string) string {
 }
 
 func getHostname(link string) string {
+
 	link = ensureScheme(link)
 	url, err := url.Parse(link)
 
