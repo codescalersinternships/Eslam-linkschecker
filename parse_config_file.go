@@ -6,14 +6,14 @@ import (
 	toml "github.com/pelletier/go-toml"
 )
 
-func parseConfigFile(configFile *string) []string {
+func LinksFromConfig(configFile *string) ([]string, error) {
 	config, err := toml.LoadFile(*configFile)
 
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	mp := config.ToMap()
-	return getLinksFromMap(mp)
+	return getLinksFromMap(mp), nil
 }
 
 func getLinksFromMap(mp any) []string {

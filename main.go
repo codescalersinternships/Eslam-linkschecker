@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,42 +15,81 @@ func main() {
 	configFile := flag.String("config", "config.toml", "")
 	flag.Parse()
 
-	links := parseConfigFile(configFile)
+	links, err := LinksFromConfig(configFile)
+
+	if err != nil {
+		panic(err)
+	}
 
 	mp := make(map[string]bool)
 	checkAllLinks(links, mp, "")
+
+}
+
+func checkAllLinks(links []string, visitedLinks map[string]bool, parent string) {
+	for _, link := range links {
+		if !visitedLinks[link] {
+
+			visitedLinks[link] = true
+			tempLink := fmt.Sprintf("%s/%s", getHostname(parent), strings.Trim(link, "/"))
+
+			if validLink(tempLink) {
+
+				innerLinks := getLinks(tempLink)
+				checkAllLinks(innerLinks, visitedLinks, tempLink)
+
+			} else {
+
+				if getHostname(link) == getHostname(parent) || parent == "" {
+
+					if validLink(link) {
+						innerLinks := getLinks(link)
+						checkAllLinks(innerLinks, visitedLinks, link)
+					} else {
+						fmt.Println(link)
+					}
+
+				} else if !validLink(link) {
+					fmt.Println(link)
+				}
+			}
+		}
+	}
 }
 
 func validLink(link string) bool {
-	link = addHeader(link)
+	link = ensureScheme(link)
+	var requestFun func(fn func(string) (*http.Response, error)) bool
 
-	headResp, headErr := http.Head(link)
-	getResp, GetErr := http.Get(link)
+	requestFun = func(fn func(string) (*http.Response, error)) bool {
+		resp, err := fn(link)
+		if err != nil {
+			return false
+		}
 
-	if headErr != nil || GetErr != nil {
-		return false
+		defer resp.Body.Close()
+
+		statusCode := resp.StatusCode
+		return (statusCode >= 200 && statusCode < 400)
 	}
-
-	defer headResp.Body.Close()
-	defer getResp.Body.Close()
-
-	getStatusCode := getResp.StatusCode
-	headStatusCode := headResp.StatusCode
-	return (getStatusCode >= 200 && getStatusCode < 400) ||
-		(headStatusCode >= 200 && headStatusCode < 400)
+	return requestFun(http.Head) || requestFun(http.Get)
 }
 
-func getLinks(link string) []string {
-	var links []string
-	link = addHeader(link)
-
+func extractLinksFromString(link string) io.ReadCloser {
+	link = ensureScheme(link)
 	resp, err := http.Get(link)
 
 	if err != nil {
 		return nil
 	}
 
-	body := resp.Body
+	return resp.Body
+}
+
+func getLinks(link string) []string {
+	var links []string
+
+	body := extractLinksFromString(link)
 	defer body.Close()
 
 	z := html.NewTokenizer(body)
@@ -71,41 +111,20 @@ func getLinks(link string) []string {
 	}
 }
 
-func checkAllLinks(links []string, allLinks map[string]bool, parent string) {
-	for _, link := range links {
-		if !allLinks[link] {
-			allLinks[link] = true
-			if validLink(link) {
-				innerLinks := getLinks(link)
-				checkAllLinks(innerLinks, allLinks, link)
-			} else if parent != "" {
-				host := getHostname(parent)
-				newLink := fmt.Sprintf("%s/%s", host, strings.Trim(link, "/"))
-				if host != "" && validLink(newLink) {
-					innerLinks := getLinks(addHeader(newLink))
-					checkAllLinks(innerLinks, allLinks, newLink)
-				} else {
-					fmt.Println("Failed: ", newLink)
-				}
-			} else {
-				fmt.Println("Failed: ", link)
-			}
-		}
-	}
-}
-
-func addHeader(link string) string {
+func ensureScheme(link string) string {
 	if !strings.HasPrefix(link, "http://") && !strings.HasPrefix(link, "https://") {
-		link = fmt.Sprintf("http://%s", link)
+		link = fmt.Sprintf("https://%s", link)
 	}
 	return link
 }
 
 func getHostname(link string) string {
-	link = addHeader(link)
+	link = ensureScheme(link)
 	url, err := url.Parse(link)
+
 	if err != nil {
 		return ""
 	}
+
 	return strings.Trim(url.Hostname(), "/")
 }
