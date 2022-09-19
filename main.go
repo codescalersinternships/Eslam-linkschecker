@@ -11,6 +11,11 @@ import (
 	"golang.org/x/net/html"
 )
 
+type mapChanels struct {
+	visitLink chan string
+	linkState chan bool
+}
+
 func main() {
 
 	configFile := flag.String("config", "config.toml", "")
@@ -22,22 +27,27 @@ func main() {
 		panic(err)
 	}
 
-	mp := make(map[string]bool)
-	checkAllLinks(links, mp, "")
+	mp := manageLinksMap()
 
+	sync := make(chan bool)
+	go mp.checkArrayOfLinks(links, "", sync)
+	<-sync
 }
 
-func checkAllLinks(links []string, visitedLinks map[string]bool, parent string) {
-
+func (mp mapChanels) checkArrayOfLinks(links []string, parent string, parentChan chan bool) {
+	cnt := 0
+	childChan := make(chan bool)
 	for _, link := range links {
-		if _, ok := visitedLinks[link]; !ok {
-			visitedLinks[link] = true
+		mp.visitLink <- link
+		if ok := <-mp.linkState; !ok {
+
 			tempLink := fmt.Sprintf("%s/%s", getHostname(parent), strings.Trim(link, "/"))
 
 			if validLink(tempLink) {
 
 				innerLinks := visitLinkAndExtractLinks(tempLink)
-				checkAllLinks(innerLinks, visitedLinks, tempLink)
+				cnt++
+				go mp.checkArrayOfLinks(innerLinks, tempLink, childChan)
 
 			} else {
 
@@ -45,7 +55,8 @@ func checkAllLinks(links []string, visitedLinks map[string]bool, parent string) 
 
 					if validLink(link) {
 						innerLinks := visitLinkAndExtractLinks(link)
-						checkAllLinks(innerLinks, visitedLinks, link)
+						cnt++
+						go mp.checkArrayOfLinks(innerLinks, link, childChan)
 					} else {
 						fmt.Println(link)
 					}
@@ -56,6 +67,30 @@ func checkAllLinks(links []string, visitedLinks map[string]bool, parent string) 
 			}
 		}
 	}
+	for i := 0; i < cnt; i++ {
+		<-childChan
+	}
+	parentChan <- true
+}
+
+func manageLinksMap() mapChanels {
+	ch := mapChanels{}
+
+	ch.visitLink = make(chan string)
+	ch.linkState = make(chan bool)
+
+	visitedLinks := make(map[string]bool)
+	go func() {
+		for {
+			link := <-ch.visitLink
+			isVisited := visitedLinks[link]
+			if !isVisited {
+				visitedLinks[link] = true
+			}
+			ch.linkState <- isVisited
+		}
+	}()
+	return ch
 }
 
 func validLink(link string) bool {
